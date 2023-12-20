@@ -27,11 +27,4 @@ public class FolderCreatorServiceImpl implements FolderCreatorService {
     return Files.createTempDirectory(folder);
   }
 
-
-  @Override
-  public Path createPlanFolder(String gitRepo, String uniqueIdentifier) throws IOException {
-    String folder = String.format("plan-%s-%s", StringUtils.substringAfterLast(gitRepo, "/"), uniqueIdentifier);
-    log.info("Creating temp folder: {}", folder);
-    return Files.createTempDirectory(folder);
-  }
 }

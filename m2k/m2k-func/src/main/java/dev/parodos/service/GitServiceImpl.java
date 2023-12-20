@@ -1,42 +1,53 @@
 package dev.parodos.service;
 
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Session;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.jgit.api.ArchiveCommand;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.CommitCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.ListBranchCommand;
 import org.eclipse.jgit.api.PushCommand;
+import org.eclipse.jgit.api.TransportConfigCallback;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
-import org.eclipse.jgit.api.errors.TransportException;
-import org.eclipse.jgit.archive.ZipFormat;
 import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.SshTransport;
+import org.eclipse.jgit.transport.Transport;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.eclipse.jgit.transport.ssh.jsch.JschConfigSessionFactory;
+import org.eclipse.jgit.transport.ssh.jsch.OpenSshConfig;
+import org.eclipse.jgit.util.FS;
+import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Path;
 
 @ApplicationScoped
 public class GitServiceImpl implements GitService {
   private static final Logger log = LoggerFactory.getLogger(GitServiceImpl.class);
-
+  public static final Path SSH_PRIV_KEY_PATH = Path.of(ConfigProvider.getConfig().getValue("ssh-priv-key-path", String.class));
   @Override
-  public Git cloneRepo(String repo, String branch, String token, Path targetDirectory) throws GitAPIException {
+  public Git cloneRepo(String repo, String branch, String token, Path targetDirectory) throws GitAPIException, IOException {
     try {
+      if (repo.startsWith("ssh") && !repo.contains("@")) {
+        log.info("No user specified in ssh git url, using 'git' user");
+        String[] protocolAndHost = repo.split("://");
+        String repoWithGitUser = "git@" + protocolAndHost[1];
+        repo = protocolAndHost[0] + "://" + repoWithGitUser;
+      }
       CloneCommand cloneCommand = Git.cloneRepository().setURI(repo).setDirectory(targetDirectory.toFile());
       if (token != null && !token.isBlank()) {
-        log.info("Using token credentials to clone");
-        CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider("x-token-auth", token);
+        log.info("Cloning repo {} in {} using token", repo, targetDirectory);
+        CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider(token, "");
         cloneCommand.setCredentialsProvider(credentialsProvider);
+      } else {
+        log.info("Cloning repo {} in {} using ssh keys {}", repo, targetDirectory, SSH_PRIV_KEY_PATH);
+        cloneCommand.setTransportConfigCallback(getTransport(SSH_PRIV_KEY_PATH));
       }
-
-      log.info("Cloning repo {} in {}", repo, targetDirectory);
       return cloneCommand.call();
     } catch (InvalidRemoteException e) {
       log.error("remote repository server '{}' is not available", repo, e);
@@ -44,35 +55,10 @@ public class GitServiceImpl implements GitService {
     } catch (GitAPIException e) {
       log.error("Cannot clone repository: {}", repo, e);
       throw e;
-    }
-  }
-
-  @Override
-  public Git generateRepositoryArchive(String repo, String branch, String token, Path archiveOutputPath) throws GitAPIException, IOException {
-    ArchiveCommand.registerFormat("zip", new ZipFormat());
-    Git clonedRepo = cloneRepo(repo, branch, token, archiveOutputPath.getParent());
-    log.info("Creating zip {} of branch {} of repo {}", archiveOutputPath, branch, repo);
-    try (OutputStream out = new FileOutputStream(archiveOutputPath.toFile())) {
-      clonedRepo.archive()
-          .setFormat("zip")
-          .setTree(clonedRepo.getRepository().resolve(branch))
-          .setOutputStream(out)
-          .call().close();
-    } catch (TransportException e) {
-      log.error("Cannot connect to repository server '{}'", repo, e);
-      throw e;
-    } catch (GitAPIException e) {
-      log.error("Cannot archive repository: {}", repo, e);
-      throw e;
-    } catch (FileNotFoundException e) {
-      log.error("File: {} not found", archiveOutputPath, e);
-      throw e;
     } catch (IOException e) {
-      log.error("Error while writing to file: {}", archiveOutputPath, e);
+      log.error("Cannot set ssh transport: {}", repo, e);
       throw e;
     }
-
-    return clonedRepo;
   }
 
   @Override
@@ -103,14 +89,47 @@ public class GitServiceImpl implements GitService {
   }
 
   @Override
-  public void push(Git repo, String token) throws GitAPIException {
+  public void push(Git repo, String token) throws GitAPIException, IOException {
     log.info("Pushing to repo {}", repo);
-    PushCommand pushCommand = repo.push().setForce(false);
+    PushCommand pushCommand = repo.push().setForce(false).setRemote("origin");
     if (token != null && !token.isBlank()) {
-      log.info("Using token credentials to push");
-      CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider("x-token-auth", token);
+      log.info("Push using token");
+      CredentialsProvider credentialsProvider = new UsernamePasswordCredentialsProvider(token, "");
       pushCommand.setCredentialsProvider(credentialsProvider);
+    } else {
+      log.info("Push using ssh key {}", SSH_PRIV_KEY_PATH);
+      pushCommand.setTransportConfigCallback(getTransport(SSH_PRIV_KEY_PATH));
     }
     pushCommand.call();
+  }
+
+  public static TransportConfigCallback getTransport(Path sshKeyPath) throws IOException {
+    if (!sshKeyPath.toFile().exists()) {
+      throw new IOException("SSH key file at '%s' does not exists".formatted(sshKeyPath.toString()));
+    }
+
+    var sshSessionFactory = new JschConfigSessionFactory() {
+      @Override
+      protected void configure(OpenSshConfig.Host host, Session session) {
+        session.setConfig("StrictHostKeyChecking", "no");
+        session.setConfig("PreferredAuthentications", "publickey");
+      }
+
+      @Override
+      protected JSch createDefaultJSch(FS fs) throws JSchException {
+        JSch defaultJSch = super.createDefaultJSch(fs);
+        defaultJSch.removeAllIdentity();
+        defaultJSch.addIdentity(sshKeyPath.toString());
+        return defaultJSch;
+      }
+    };
+    return new TransportConfigCallback() {
+      @Override
+      public void configure(Transport transport) {
+        SshTransport sshTransport = (SshTransport) transport;
+        sshTransport.setSshSessionFactory(sshSessionFactory);
+
+      }
+    };
   }
 }

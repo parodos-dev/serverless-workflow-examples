@@ -48,7 +48,6 @@
         }
     },
     "required": [
-        "token",
         "repo",
         "sourceBranch",
         "targetBranch",

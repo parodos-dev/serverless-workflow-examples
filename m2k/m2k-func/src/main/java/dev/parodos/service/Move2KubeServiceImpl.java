@@ -34,14 +34,6 @@ public class Move2KubeServiceImpl implements Move2KubeService {
   String move2kubeApi;
 
   @Override
-  public void createPlan(String workspaceId, String projectId, Path zipFile) throws ApiException {
-    ApiClient client = new ApiClient();
-    client.setBasePath(move2kubeApi);
-    PlanApi planApi = new PlanApi(client);
-    addSourceCode(new ProjectInputsApi(client), workspaceId, projectId, zipFile.toAbsolutePath().toString());
-    planApi.startPlanning(workspaceId, projectId, "");
-  }
-  @Override
   public Path getTransformationOutput(String workspaceId, String projectId, String transformationId) throws IllegalArgumentException, IOException, ApiException {
     Path outputPath = folderCreatorService.createMove2KubeTransformationFolder(String.format("move2kube-transform-%s", transformationId));
     ApiClient client = new ApiClient();
@@ -82,16 +74,6 @@ public class Move2KubeServiceImpl implements Move2KubeService {
 
       }
     } while (!o.getStatus().equals("done")) ;
-  }
-
-  private void addSourceCode(ProjectInputsApi projectInputsApi, String workspaceID, String projectID, String ZIPPath) throws ApiException {
-    File file = new File(ZIPPath);
-    try {
-      projectInputsApi.createProjectInput(workspaceID, projectID, "sources", "Id", "source code", file);
-    } catch (ApiException e) {
-      log.error("cannot append source code! {}", e.getMessage());
-      throw e;
-    }
   }
 
   public static void extractZipFile(File zipFile, Path extractPath) throws IOException {

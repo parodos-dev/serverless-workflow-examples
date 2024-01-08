@@ -30,7 +30,12 @@ Should output
 ```
 namespace/m2k created
 ```
+
 #### 1. Move2Kube
+move2kube needs to have the ssh keys in the `.ssh` folder in order to be able to clone private git repository using ssh:
+```bash
+kubectl create secret generic sshkeys --from-file=id_rsa=${HOME}/.ssh/id_rsa --from-file=id_rsa.pub=${HOME}/.ssh/id_rsa.pub
+```
 To run properly, a move2kube instance must be running in the cluster, or at least reachable from the cluster:
 ```bash
 kubectl apply -f k8s/move2kube.yaml
@@ -78,6 +83,15 @@ Then
 ```bash
 eval $(minikube docker-env)
 ```
+
+We need to use `initContainers` in our Knative services, we have to tell Knative to enable that feature:
+```bash
+  kubectl patch configmap/config-features \
+    -n knative-serving \
+    --type merge \
+    -p '{"data":{kubernetes.podspec-init-containers: "enabled"}}'
+  ```
+
 Then generate the `broker` (and other workflow related Knative resources) by running the following command from `m2k/serverless-workflow-m2k`:
 ```bash
 cd serverless-workflow-m2k
@@ -104,7 +118,6 @@ Should output
 ```
 trigger.eventing.knative.dev/error-event-type-trigger-serverless-workflow-m2k created
 trigger.eventing.knative.dev/transformation-saved-event-type-trigger-serverless-workflow-m2k created
-trigger.eventing.knative.dev/plan-created-event-type-trigger-serverless-workflow-m2k created
 broker.eventing.knative.dev/default created
 ```
 
@@ -120,7 +133,7 @@ kubectl -n m2k patch ksvc serverless-workflow-m2k --type merge -p '{
                {
                   "name":"serverless-workflow-m2k",
                   "imagePullPolicy": "Always",
-                  "image":"quay.io/orchestrator/serverless-workflow-m2k:1.0.0-SNAPSHOT",
+                  "image":"quay.io/orchestrator/serverless-workflow-m2k:2.0.0-SNAPSHOT",
                   "env":[
                      {
                         "name":"MOVE2KUBE_URL",
@@ -169,16 +182,20 @@ Should output
 quay.io/orchestrator/serverless-workflow-m2k                                    <none>         cd2e0498ee70   4 minutes ago   487MB
 ```
 #### 4. M2K Knative functions and GC
-* [m2k-service.yaml](k8s/m2k-service.yaml) will deploy 2 kservices that will spin-up the functions when an event is received
+* [m2k-service.yaml](k8s/m2k-service.yaml) will deploy the Knative service that will spin-up the functions when an event is received
 * [m2k-trigger.yaml](k8s/m2k-trigger.yaml) will deploy the triggers related to the expected event and to which the kservice subscribes and rely on to get started
 * [knative-gc.yaml](k8s%2Fknative-gc.yaml) will setup the GC to keep only 3 revisions in the cluster
-From the root folder of the project, first create the Knative services:
+
+As we are using ssh keys to interact with the private git repo (ie: bitbucket), similarly to what we have done when deploying the `move2kube` instance, we need to create secrets in the `m2k` namespace containing the keys:
+```bash
+kubectl create -n m2k secret generic sshkeys --from-file=id_rsa=${HOME}/.ssh/id_rsa --from-file=id_rsa.pub=${HOME}/.ssh/id_rsa.pub
+```
+* From the root folder of the project, first create the Knative services:
 ```bash
 kubectl -n m2k apply -f k8s/m2k-service.yaml 
 ```
 Should output
 ```
-service.serving.knative.dev/m2k-create-plan-func created
 service.serving.knative.dev/m2k-save-transformation-func created
 ```
 Next, the Knative Garbage Collector:
@@ -195,7 +212,6 @@ kubectl -n m2k apply -f k8s/m2k-trigger.yaml
 ```
 Should output
 ```
-trigger.eventing.knative.dev/m2k-create-plan-event created
 trigger.eventing.knative.dev/m2k-save-transformation-event created
 ```
 You will notice that the environment variable `EXPORTED_FUNC` is set for each Knative service: this variable defines which function is expose in the service.
@@ -206,7 +222,6 @@ kubectl -n m2k get ksvc
 ```
 ```
 NAME                           URL                                                               LATESTCREATED                     LATESTREADY                       READY   REASON
-m2k-create-plan-func           http://m2k-create-plan-func.m2k.10.110.165.153.sslip.io           m2k-create-plan-func-v1           m2k-create-plan-func-v1           True    
 m2k-save-transformation-func   http://m2k-save-transformation-func.m2k.10.110.165.153.sslip.io   m2k-save-transformation-func-v1   m2k-save-transformation-func-v1   True    
 serverless-workflow-m2k        http://serverless-workflow-m2k.m2k.10.110.165.153.sslip.io        serverless-workflow-m2k-00002     serverless-workflow-m2k-00002     True  
 ```
@@ -222,7 +237,7 @@ curl -X POST -H 'Content-Type: application/json'  serverless-workflow-m2k.m2k.sv
 "repo": "https://bitbucket.org/<repo path>", 
 "sourceBranch": "master",
 "targetBranch": "mk2-swf",
-"token": "<bitbucket auth token>",
+"token": "<optional, bitbucket token with read/write rights, otherwise will use ssh key>",
 "workspaceId": "816fea47-84e6-43b4-81c8-9a7462cf9e1e",
 "projectId": "fc411095-4b3c-499e-8590-7ac09d89d5fc",
 "user":"<user email>",
@@ -241,7 +256,6 @@ Then you can monitor the Knative functions pods being created:
 Every 2.0s: kubectl -n m2k get pods                                                                                                                                                              fedora: Fri Oct 13 11:33:22 2023
 
 NAME                                                          READY   STATUS    RESTARTS      AGE
-m2k-create-plan-func-v1-deployment-6d87766bdb-d7hkd           2/2     Running   0             45s
 m2k-save-transformation-func-v1-deployment-545dc45cfc-rsdls   2/2     Running   0             23s
 serverless-workflow-m2k-00002-deployment-58fb774d6c-xxwg2     2/2     Running   0             55s
 ```
@@ -263,7 +277,7 @@ If the timeout expires while the workflow is down, as the jobs service is sendin
     --type merge \
     -p '{"data":{"registries-skipping-tag-resolving":"quay.io"}}'
   ```
-* You can use the Integration tests `SaveTransformationFunctionIT` and `CreatePlanFunctionIT` to debug the code
+* You can use the Integration tests `SaveTransformationFunctionIT` to debug the code
 * If there is a `SinkBinding` generated you need to patch it as the namespace of the broker is not correctly set:
 ```bash
 kubectl patch SinkBinding/sb-serverless-workflow-m2k \

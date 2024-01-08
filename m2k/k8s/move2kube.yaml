@@ -13,9 +13,33 @@ spec:
     spec:
       containers:
         - name: move2kube
-          image: quay.io/konveyor/move2kube-ui:latest
+          image: quay.io/orchestrator/move2kube-ui:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: SSH_AUTH_SOCK
+              value: /tmp/unix-socket
+          volumeMounts:
+            - name: ssh-priv-key
+              readOnly: true
+              mountPath: "/root/.ssh/id_rsa"
+              subPath: id_rsa
+            - name: ssh-pub-key
+              readOnly: true
+              mountPath: "/root/.ssh/id_rsa.pub"
+              subPath: id_rsa.pub
+          lifecycle:
+            postStart:
+              exec:
+                command: [ "/bin/sh", "-c", "ssh-agent -a /tmp/unix-socket && ssh-add" ]
+      volumes:
+        - name: ssh-priv-key
+          secret:
+            secretName: sshkeys
+            defaultMode: 384
+        - name: ssh-pub-key
+          secret:
+            secretName: sshkeys
 ---
 apiVersion: v1
 kind: Service

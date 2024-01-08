@@ -164,7 +164,7 @@ public class SaveTransformationFunction {
     log.info("Pushing commit to branch {} of repo {}", input.branch, input.gitRepo);
     try {
       gitService.push(clonedRepo, input.token);
-    } catch (GitAPIException e) {
+    } catch (GitAPIException | IOException e) {
       log.error("Cannot push branch {} to remote repo {}", input.branch, input.gitRepo, e);
       return EventGenerator.createErrorEvent(input.workflowCallerId, String.format("Cannot push branch %s to remote repo %s; error: %s",
           input.branch, input.gitRepo, e), SOURCE);
@@ -191,7 +191,6 @@ public class SaveTransformationFunction {
       return !((gitRepo == null || gitRepo.isBlank()) ||
           (branch == null || branch.isBlank()) ||
           (workspaceId == null || workspaceId.isBlank()) ||
-          (token == null || token.isBlank()) ||
           (projectId == null || projectId.isBlank()) ||
           (workflowCallerId == null || workflowCallerId.isBlank()) ||
           (transformId == null || transformId.isBlank()));

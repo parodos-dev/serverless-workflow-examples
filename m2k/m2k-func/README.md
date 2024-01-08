@@ -1,18 +1,11 @@
 # m2k-kfunc Project
 This projects implements the Knative functions that will interact with Move2Kube instance and Github in order to prepare and save the transformations.
 
-* CreatePlaning: 
-  * Triggered by the event `create-plan`
-  * First, this function will download the archive of the requested branch
-  * Then it will upload this archive to the requested Move2kube project under the provided workspace in order to create a planning
-  * Will send events:
-    * `plan_created_event_type` if success
-    * `error_event_type` if any error
 * SaveTransformationOutput:
   * Triggered by the event `save-transformation`
   * This function will first retrieve the transformation output archive from the Move2Kube project
   * Then it will create a new branch based on the provided input in the provided BitBucket repo
-  * Finally, it will un-archive the previously downloaded file, commit the change and push them to BitBucket using the provided token
+  * Finally, it will un-archive the previously downloaded file, commit the change and push them to BitBucket using the token if provided, otherwise the ssh keys will be used
   * Will send events:
     * `transformation_saved` if success
     * `error` if any error
@@ -42,7 +35,7 @@ mvn clean install
 ## Build image
 To build the image, run:
 ```bash
- docker build -t quay.io/orchestrator/m2k-kfunc -f src/main/docker/Dockerfile.jvm .
+ docker build -t quay.io/orchestrator/m2k-kfunc:2.0.0-SNAPSHOT -f src/main/docker/Dockerfile.jvm .
 ```
 
 ## Run it
@@ -78,7 +71,6 @@ kubectl -n m2k apply -f k8s/m2k-service.yaml
 ```
 Should output
 ```
-service.serving.knative.dev/m2k-create-plan-func created
 service.serving.knative.dev/m2k-save-transformation-func created
 ```
 Finally the triggers
@@ -87,7 +79,6 @@ kubectl -n m2k apply -f k8s/m2k-trigger.yaml
 ```
 Should output
 ```
-trigger.eventing.knative.dev/m2k-create-plan-event created
 trigger.eventing.knative.dev/m2k-save-transformation-event created
 ```
 You will notice that the environment variable `EXPORTED_FUNC` is set for each Knative service: this variable defines which function is expose in the service.
@@ -117,7 +108,6 @@ kubectl -n m2k get ksvc
 Should output
 ```
 NAME                           URL                                                               LATESTCREATED                     LATESTREADY                       READY   REASON
-m2k-create-plan-func           http://m2k-create-plan-func.m2k.10.110.165.153.sslip.io           m2k-create-plan-func-v1           m2k-create-plan-func-v1           True    
 m2k-save-transformation-func   http://m2k-save-transformation-func.m2k.10.110.165.153.sslip.io   m2k-save-transformation-func-v1   m2k-save-transformation-func-v1   True    
 ```
 ### Use it
@@ -128,48 +118,8 @@ kubectl run fedora --rm --image=fedora -i --tty -- bash
 
 1. Go to `http://<move2kubeUI-URL>/` and create a new workspace and a new project inside this workspace.
 
-2. To create a plan, send the following request from a place that can reach the broker deployed in the cluster:
-```bash
-curl -v "http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default"\
- -X POST\
-    -H "Ce-Id: 1234"\
-    -H "Ce-Specversion: 1.0"\
-    -H "Ce-Type: create-plan"\
-    -H "Ce-Source: curl"\
-    -H "Content-Type: application/json"\
-    -d '{"gitRepo": "<repo>", 
-    "branch": "<branch to use when generating archive>",
-    "token": "<optional, bitbucket token with read/write rights>",
-    "workspaceId": "<ID of the workspace previously created>",
-    "projectId": "<ID of the project previously created>",
-    "workflowCallerId": "<string, represents the ID of the SWF calling>"
-    }'
-```
-The URL `http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default` is formatted as follow: `http://broker-ingress.knative-eventing.svc.cluster.local/<namespace>/<broker name>`. If you were to change the namespace or the name of the broker, the URL should be updated accordingly.
-
-To get this URL, run
-```bash
-kubectl get broker -n m2k 
-```
-Should output
-```
-NAME      URL                                                                    AGE    READY   REASON
-default   http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default   107s   True    
-```
-
-You can find the workspace and project IDs in the URL path, ie: `http://localhost:8080/workspaces/<workspace ID>/projects/<project ID>`
-
-You should see a new pod created for the create plan service:
-```bash
-kubectl get pods -n m2k 
-```
-Should output
-```
-NAME                                                         READY   STATUS    RESTARTS   AGE
-m2k-create-plan-func-v1-deployment-5d6c4b6cb9-fkp9s          2/2     Running   0          6s
-```
-
-3. Now you can go to `http://<move2kubeUI-URL>/workspaces/<workspaceID>/projects/<projectID>` and start the transformation. 
+2. Create a plan by upload an archive (ie: zip file) containing a git repo (see https://move2kube.konveyor.io/tutorials/ui for more details)
+3. Then start the transformation. 
 You should be asked to answer some questions, once this is done, the transformation output should be generated.
 
 4. To save a transformation output, send the following request from a place that can reach the broker deployed in the cluster:
@@ -183,7 +133,7 @@ curl -v "http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default"\
     -H "Content-Type: application/json"\
     -d '{"gitRepo": "<repo>", 
     "branch": "<branch to which save the transformation output>",
-    "token": "<BitBucket token with write rights>",
+    "token": "<optional, bitbucket token with read/write rights, otherwise will use ssh key>",
     "workspaceId": "<ID of the workspace previously created>",
     "projectId": "<ID of the project previously created>",
     "transformId": "<ID of the transformation previously created>",
@@ -203,15 +153,19 @@ m2k-save-transformation-func-v1-deployment-76859dc76-h7856   2/2     Running   0
 
 After few minutes, the pods will automatically scale down if no new event is received.
 
+The URL `http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default` is formatted as follow: `http://broker-ingress.knative-eventing.svc.cluster.local/<namespace>/<broker name>`. If you were to change the namespace or the name of the broker, the URL should be updated accordingly.
+
+To get this URL, run
+```bash
+kubectl get broker -n m2k 
+```
+Should output
+```
+NAME      URL                                                                    AGE    READY   REASON
+default   http://broker-ingress.knative-eventing.svc.cluster.local/m2k/default   107s   True    
+```
 
 ## Related Guides
 
 - Funqy HTTP Binding ([guide](https://quarkus.io/guides/funqy-http)): HTTP Binding for Quarkus Funqy framework
 
-## Provided Code
-
-### Funqy HTTP
-
-Start your Funqy functions using HTTP
-
-[Related guide section...](https://quarkus.io/guides/funqy-http#get-query-parameter-mapping)

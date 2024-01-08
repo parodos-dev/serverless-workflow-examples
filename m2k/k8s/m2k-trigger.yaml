@@ -1,21 +1,6 @@
 apiVersion: eventing.knative.dev/v1
 kind: Trigger
 metadata:
-  name: m2k-create-plan-event
-spec:
-  broker: default
-  filter:
-    attributes:
-      type: create-plan
-  subscriber:
-    ref:
-      apiVersion: serving.knative.dev/v1
-      kind: Service
-      name: m2k-create-plan-func
----
-apiVersion: eventing.knative.dev/v1
-kind: Trigger
-metadata:
   name: m2k-save-transformation-event
 spec:
   broker: default

@@ -10,7 +10,7 @@ start: LaunchJob
 extensions:
   - extensionid: workflow-uri-definitions
     definitions:
-      notifications: "https://raw.githubusercontent.com/janus-idp/backstage-plugins/%40janus-idp/plugin-notifications-backend%401.0.3/plugins/notifications-backend/src/openapi.yaml"
+      notifications: https://raw.githubusercontent.com/parodos-dev/serverless-workflows/main/shared/specs/notifications-openapi.yaml
 functions:
   - name: launchJob
     operation: specs/aap-openapi.yaml#launchJob
@@ -70,16 +70,15 @@ states:
       - functionRef:
           refName: createNotification
           arguments:
-            title: '"AAP Job Workflow " + $WORKFLOW.instanceId + " Failed"'
-            message: '"AAP job workflow id: " + $WORKFLOW.instanceId + " for job template id: " + (.jobTemplateId|tostring) + " failed."'
-            origin: "AAP Job Workflow"
-            topic: "AAP Job Workflow"
-            targetUsers:
-              - "default/guest"
-            targetGroups: []
-            actions:
-              - title: "AAP Job Output"
-                url: .launchedJob.outputUrl
+            recipients:
+              type: entity
+              entityRef:  ['"user:"+.backstageUser']
+            payload:
+              title: '"AAP Job Workflow " + $WORKFLOW.instanceId + " Failed"'
+              description: '"AAP job workflow id: " + $WORKFLOW.instanceId + " for job template id: " + (.jobTemplateId|tostring) + " failed."'
+              scope: "AAP Job Workflow"
+              topic: "AAP Job Workflow"
+              link: .launchedJob.outputUrl
     end: true
   - name: SendSuccessNotification
     type: operation
@@ -87,14 +86,13 @@ states:
       - functionRef:
           refName: createNotification
           arguments:
-            title: '"AAP Job Workflow " + $WORKFLOW.instanceId + " Succeeded"'
-            message: '"AAP job workflow id: " + $WORKFLOW.instanceId + " for job template id: " + (.jobTemplateId|tostring) + " succeeded."'
-            origin: "AAP Job Workflow"
-            topic: "AAP Job Workflow"
-            targetUsers:
-              - "default/guest"
-            targetGroups: []
-            actions:
-              - title: "AAP Job Output"
-                url: .launchedJob.outputUrl
+            recipients:
+              type: entity
+              entityRef:  ['"user:"+.backstageUser']
+            payload:
+              title: '"AAP Job Workflow " + $WORKFLOW.instanceId + " Succeeded"'
+              description: '"AAP job workflow id: " + $WORKFLOW.instanceId + " for job template id: " + (.jobTemplateId|tostring) + " succeeded."'
+              scope: "AAP Job Workflow"
+              topic: "AAP Job Workflow"
+              link: .launchedJob.outputUrl
     end: true

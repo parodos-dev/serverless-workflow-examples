@@ -13,17 +13,22 @@
     "limit": {
       "type": "string",
       "description": "Exta variables"
+    },
+    "backstageUser": {
+      "type": "string",
+      "description": "The user that will receive the notifications"
     }
   },
   "required": [
     "jobTemplateId",
-    "inventoryGroup"
+    "inventoryGroup",
+    "backstageUser"
   ],
   "examples": [
     {
-        "jobTemplateId": 17,
-        "limit": "fancy-seal",
-        "inventoryGroup": "ALL_rhel"
+      "jobTemplateId": 17,
+      "limit": "fancy-seal",
+      "inventoryGroup": "ALL_rhel"
     }
   ]
 }

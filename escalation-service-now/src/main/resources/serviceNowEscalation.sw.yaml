@@ -10,7 +10,7 @@ start: CreateChangeRequest
 extensions:
   - extensionid: workflow-uri-definitions
     definitions:
-      notifications: "https://raw.githubusercontent.com/janus-idp/backstage-plugins/%40janus-idp/plugin-notifications-backend%401.0.3/plugins/notifications-backend/src/openapi.yaml"
+      notifications: https://raw.githubusercontent.com/parodos-dev/serverless-workflows/main/shared/specs/notifications-openapi.yaml
 dataInputSchema: schemas/servicenow-escalation-schema.json
 functions:
   - name: createChangeRequest
@@ -81,15 +81,15 @@ states:
         functionRef:
           refName: "createNotification"
           arguments:
-            title: " \"Please approve: \" + (.createdChangeRequest.result.number) "
-            message: "\"Manager, please approve this change request: \\(.createdChangeRequest.result.number)\""
-            origin: "Serverless Workflow Example"
-            targetUsers: "[\"default/manager\"]"
-            topic: "Approval Request"
-            targetGroups: []
-            actions:
-              - title: "Approve"
-                url: " (.sn_url) + \"/nav_to.do?uri=change_request.do?sys_id=\" + (.createdChangeRequest.result.sys_id) "
+            recipients:
+              type: entity
+              entityRef:  ["user:default/manager"]
+            payload:
+              title: " \"Please approve: \" + (.createdChangeRequest.result.number) "
+              description: "\"Manager, please approve this change request: \\(.createdChangeRequest.result.number)\""
+              scope: "Serverless Workflow Example"
+              topic: "Approval Request"
+              link: " (.sn_url) + \"/nav_to.do?uri=change_request.do?sys_id=\" + (.createdChangeRequest.result.sys_id) "
     transition: GetChangeRequest
   - name: ThankAndTerminate
     type: operation
@@ -98,13 +98,13 @@ states:
         functionRef:
           refName: "createNotification"
           arguments:
-            title: " \"Thanks for approving: \" + (.createdChangeRequest.result.number) "
-            message: "\"Manager, thanks a ton for approving the change request: \\(.createdChangeRequest.result.number)\""
-            origin: "Serverless Workflow Example"
-            targetUsers: "[\"default/manager\"]"
-            topic: "Approval Request"
-            targetGroups: []
-            actions:
-              - title: "Approved Change Request"
-                url: " (.sn_url) + \"/nav_to.do?uri=change_request.do?sys_id=\" + (.createdChangeRequest.result.sys_id) "
+            recipients:
+              type: entity
+              entityRef:  ["user:default/manager"]
+            payload:
+              title: " \"Thanks for approving: \" + (.createdChangeRequest.result.number) "
+              description: "\"Manager, thanks a ton for approving the change request: \\(.createdChangeRequest.result.number)\""
+              scope: "Serverless Workflow Example"
+              topic: "Approval Request"
+              link: " (.sn_url) + \"/nav_to.do?uri=change_request.do?sys_id=\" + (.createdChangeRequest.result.sys_id) "
     end: true

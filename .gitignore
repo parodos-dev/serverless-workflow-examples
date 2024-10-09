@@ -31,3 +31,9 @@ out/
 ##############################
 temp
 **/clear-data.sh
+**/argfile.conf
+**/manifests
+Makefile
+pipeline/*
+kn
+scripts/
